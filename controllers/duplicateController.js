@@ -9,10 +9,17 @@ const handleDuplicateLead = async (collection, newData, insertedId) => {
   });
  
   console.log("Existing data with same mobile_phone:", existingData);
+  console.log("New data to insert:", newData);
  
   if (!existingData) {
     // Create a new lead document
-    const replicaData = { ...newData, pageName: "leads" };
+    const replicaData = {
+      ...newData,
+      pageName: "leads",
+      lead_source: newData.enquiry_source || "", // <-- map enquiry_source
+      lead_medium: newData.enquiry_medium || "", // <-- map enquiry_medium
+      lead_status: newData.enquiry_status || newData.lead_status || "New lead",
+    };
     delete replicaData._id;
  
     // Generate unique lead_id
@@ -40,10 +47,9 @@ const handleDuplicateLead = async (collection, newData, insertedId) => {
       const lastLeadId = lastLead[0].lead_id;
       const numericPart = parseInt(lastLeadId.slice(2), 10) + 1;
       replicaData.lead_id = "LD" + numericPart.toString().padStart(6, "0");
-      replicaData.lead_status = "New lead";
+      
     } else {
       replicaData.lead_id = "LD100001"; // default starting point
-      replicaData.lead_status = "New lead";
     }    
     
  

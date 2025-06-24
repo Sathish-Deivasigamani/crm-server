@@ -65,6 +65,30 @@ const getAppDataBasedOnFilter = async (req, res) => {
       console.log(`User role: ${userRole}`);
       console.log(`User name: ${userName}`);
 
+      if (userRole === "Team Lead") {
+        console.log("Applying Team Lead role-based filter");
+        const normalizedUserName = userName.trim();
+        const teamMembers = req.user?.team_members || [];
+        console.log(`Applying Team Lead filter for team members: ${JSON.stringify(teamMembers)}`);
+        if (teamMembers.length > 0) {
+          const matchStage = {
+            $match: {
+              assigned_to: {
+                $in: teamMembers.map(
+                  (member) => new RegExp(`^\\s*${member}\\s*$`, "i")
+                ),
+              },
+            },
+          };
+
+          filterCriteria.push(matchStage);
+          countPipeline.push(matchStage);
+        } else {
+          console.warn("No team members found for this Team Lead.");
+        }
+
+      }
+
       if (userRole === "Presales Team" || userRole === "Sales Team") {
         const normalizedUserName = userName.trim();
         console.log(`Applying role-based filter for user: ${normalizedUserName}`);
@@ -91,11 +115,11 @@ const getAppDataBasedOnFilter = async (req, res) => {
     if (sortFields.length > 0) {
       // Apply user-defined sorting
       sortFields.forEach((field, index) => {
-        sortStage[field] = sortOrders[index] === "desc" ? -1 : 1;
+        sortStage[field] = sortOrders[index]?.toLowerCase() === "desc" ? -1 : 1;
       });
     } else {
       // Default to created_time if no sort field provided
-      sortStage["created_time"] = 1;
+      sortStage["created_time"] = -1;
     }
 
     filterCriteria.push({ $sort: sortStage });
@@ -181,8 +205,7 @@ const createAppData = async (req, res) => {
         { _id: existingData._id },
         {
           $set: {
-            re_enquired: "Yes",
-            lead_status: "Duplicate"
+            re_enquired: "Yes"
           },
           $push: {
             history: {
@@ -223,7 +246,7 @@ const createAppData = async (req, res) => {
           $limit: 1
         }
       ]).toArray();
-    
+
       if (lastEnquiry.length > 0 && lastEnquiry[0].enquiry_id) {
         const lastEnquiryId = lastEnquiry[0].enquiry_id;
         const numericPart = parseInt(lastEnquiryId.slice(2), 10) + 1;
@@ -233,7 +256,7 @@ const createAppData = async (req, res) => {
         dataToInsert.enquiry_id = "EN100001"; // default starting point
         dataToInsert.enquiry_status = "New";
       }
-      
+
       const currentTime = new Date();
 
       const historyEntry = {
@@ -255,50 +278,50 @@ const createAppData = async (req, res) => {
 
 
     // Only assign enquiry_id if it's a new enquiry (not duplicate)
-   if (newData.pageName === 'enquiry' && !existingData) {
-  const lastEnquiry = await collection.aggregate([
-    {
-      $match: {
-        pageName: "enquiry",
-        enquiry_id: { $regex: /^EN\d+$/ }
-      }
-    },
-    {
-      $addFields: {
-        enquiryNumber: { $toInt: { $substr: ["$enquiry_id", 2, -1] } }
-      }
-    },
-    {
-      $sort: { enquiryNumber: -1 }
-    },
-    {
-      $limit: 1
-    }
-  ]).toArray();
+    if (newData.pageName === 'enquiry' && !existingData) {
+      const lastEnquiry = await collection.aggregate([
+        {
+          $match: {
+            pageName: "enquiry",
+            enquiry_id: { $regex: /^EN\d+$/ }
+          }
+        },
+        {
+          $addFields: {
+            enquiryNumber: { $toInt: { $substr: ["$enquiry_id", 2, -1] } }
+          }
+        },
+        {
+          $sort: { enquiryNumber: -1 }
+        },
+        {
+          $limit: 1
+        }
+      ]).toArray();
 
-  if (lastEnquiry.length > 0 && lastEnquiry[0].enquiry_id) {
-    const lastEnquiryId = lastEnquiry[0].enquiry_id;
-    const numericPart = parseInt(lastEnquiryId.slice(2), 10) + 1;
-    dataToInsert.enquiry_id = "EN" + numericPart;
-    dataToInsert.enquiry_status = "New";
-  } else {
-    dataToInsert.enquiry_id = "EN100001"; // default starting point
-    dataToInsert.enquiry_status = "New";
-  }
-
-  // Add initial history
-  dataToInsert.history = [{
-    updated_at: new Date(),
-    updated_by: newData.created_by || "System",
-    updated_by_id: newData.created_by_id || "",
-    updated_by_time_zone: "UTC",
-    changes: {
-      enquiry_status: {
-        new: "New"
+      if (lastEnquiry.length > 0 && lastEnquiry[0].enquiry_id) {
+        const lastEnquiryId = lastEnquiry[0].enquiry_id;
+        const numericPart = parseInt(lastEnquiryId.slice(2), 10) + 1;
+        dataToInsert.enquiry_id = "EN" + numericPart;
+        dataToInsert.enquiry_status = "New";
+      } else {
+        dataToInsert.enquiry_id = "EN100001"; // default starting point
+        dataToInsert.enquiry_status = "New";
       }
+
+      // Add initial history
+      dataToInsert.history = [{
+        updated_at: new Date(),
+        updated_by: newData.created_by || "System",
+        updated_by_id: newData.created_by_id || "",
+        updated_by_time_zone: "UTC",
+        changes: {
+          enquiry_status: {
+            new: "New"
+          }
+        }
+      }];
     }
-  }];
-}
 
 
     // Insert the new data
